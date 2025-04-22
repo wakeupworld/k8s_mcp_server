@@ -67,44 +67,200 @@ mcp = FastMCP("Kubernetes Manager")
 @mcp.tool()
 def get_pods(namespace: str = "default") -> str:
     """Get a list of pods in the specified namespace"""
-    result = KubernetesClient.execute_kubectl(["get", "pods", "-n", namespace, "-o", "json"])
+    from tabulate import tabulate
     
-    if not result.success:
-        return f"Error fetching pods: {result.error}"
+    # Use the KubernetesClient's Pydantic model approach
+    pods = KubernetesClient.get_pods(namespace=namespace)
     
-    # Process the result to format as a table
-    # For simplicity, just return the JSON result as a string
-    return str(result.output)
+    if not pods:
+        return f"Error fetching pods in namespace '{namespace}'"
+    
+    if not pods.items:
+        return f"No pods found in namespace '{namespace}'"
+    
+    # Format the data as a table
+    table_data = []
+    for pod in pods.items:
+        name = pod.metadata.name
+        status = pod.status.phase
+        
+        # Get ready count
+        ready_containers = sum(1 for c in (pod.status.container_statuses or []) if c.ready)
+        total_containers = len(pod.spec.containers)
+        ready = f"{ready_containers}/{total_containers}"
+        
+        # Get age
+        import datetime
+        from dateutil import parser
+        created = parser.isoparse(pod.metadata.creation_timestamp)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        age = now - created
+        
+        if age.days > 0:
+            age_str = f"{age.days}d"
+        else:
+            hours = age.seconds // 3600
+            minutes = (age.seconds % 3600) // 60
+            if hours > 0:
+                age_str = f"{hours}h{minutes}m"
+            else:
+                age_str = f"{minutes}m"
+        
+        table_data.append([name, ready, status, age_str])
+    
+    headers = ["NAME", "READY", "STATUS", "AGE"]
+    return tabulate(table_data, headers=headers, tablefmt="plain")
 
 @mcp.tool()
 def get_services(namespace: str = "default") -> str:
     """Get a list of services in the specified namespace"""
-    result = KubernetesClient.execute_kubectl(["get", "services", "-n", namespace, "-o", "json"])
+    from tabulate import tabulate
     
-    if not result.success:
-        return f"Error fetching services: {result.error}"
+    # Use the KubernetesClient's Pydantic model approach
+    services = KubernetesClient.get_services(namespace=namespace)
     
-    return str(result.output)
+    if not services:
+        return f"Error fetching services in namespace '{namespace}'"
+    
+    if not services.items:
+        return f"No services found in namespace '{namespace}'"
+    
+    # Format the data as a table
+    table_data = []
+    for svc in services.items:
+        name = svc.metadata.name
+        svc_type = svc.spec.type
+        cluster_ip = svc.spec.cluster_ip
+        
+        # Get external IP if available
+        external_ip = "none"
+        if hasattr(svc, "status") and hasattr(svc.status, "load_balancer") and hasattr(svc.status.load_balancer, "ingress"):
+            ingress = svc.status.load_balancer.ingress
+            if ingress and hasattr(ingress[0], "ip"):
+                external_ip = ingress[0].ip
+            elif ingress and hasattr(ingress[0], "hostname"):
+                external_ip = ingress[0].hostname
+        
+        # Format ports
+        ports = []
+        for port in svc.spec.ports:
+            port_str = f"{port.port}"
+            if hasattr(port, "target_port"):
+                port_str += f":{port.target_port}"
+            if hasattr(port, "node_port") and port.node_port:
+                port_str += f":{port.node_port}"
+            ports.append(f"{port_str}/{port.protocol}")
+        ports_str = ",".join(ports)
+        
+        # Get age
+        import datetime
+        from dateutil import parser
+        created = parser.isoparse(svc.metadata.creation_timestamp)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        age = now - created
+        
+        if age.days > 0:
+            age_str = f"{age.days}d"
+        else:
+            hours = age.seconds // 3600
+            minutes = (age.seconds % 3600) // 60
+            if hours > 0:
+                age_str = f"{hours}h{minutes}m"
+            else:
+                age_str = f"{minutes}m"
+        
+        table_data.append([name, svc_type, cluster_ip, external_ip, ports_str, age_str])
+    
+    headers = ["NAME", "TYPE", "CLUSTER-IP", "EXTERNAL-IP", "PORT(S)", "AGE"]
+    return tabulate(table_data, headers=headers, tablefmt="plain")
 
 @mcp.tool()
 def get_deployments(namespace: str = "default") -> str:
     """Get a list of deployments in the specified namespace"""
-    result = KubernetesClient.execute_kubectl(["get", "deployments", "-n", namespace, "-o", "json"])
+    from tabulate import tabulate
     
-    if not result.success:
-        return f"Error fetching deployments: {result.error}"
+    # Use the KubernetesClient's Pydantic model approach
+    deployments = KubernetesClient.get_deployments(namespace=namespace)
     
-    return str(result.output)
+    if not deployments:
+        return f"Error fetching deployments in namespace '{namespace}'"
+    
+    if not deployments.items:
+        return f"No deployments found in namespace '{namespace}'"
+    
+    # Format the data as a table
+    table_data = []
+    for deploy in deployments.items:
+        name = deploy.metadata.name
+        
+        # Get ready replicas
+        ready = f"{deploy.status.ready_replicas or 0}/{deploy.spec.replicas}"
+        up_to_date = deploy.status.updated_replicas or 0
+        available = deploy.status.available_replicas or 0
+        
+        # Get age
+        import datetime
+        from dateutil import parser
+        created = parser.isoparse(deploy.metadata.creation_timestamp)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        age = now - created
+        
+        if age.days > 0:
+            age_str = f"{age.days}d"
+        else:
+            hours = age.seconds // 3600
+            minutes = (age.seconds % 3600) // 60
+            if hours > 0:
+                age_str = f"{hours}h{minutes}m"
+            else:
+                age_str = f"{minutes}m"
+        
+        table_data.append([name, ready, str(up_to_date), str(available), age_str])
+    
+    headers = ["NAME", "READY", "UP-TO-DATE", "AVAILABLE", "AGE"]
+    return tabulate(table_data, headers=headers, tablefmt="plain")
 
 @mcp.tool()
 def get_namespaces() -> str:
     """Get a list of all namespaces in the cluster"""
-    result = KubernetesClient.execute_kubectl(["get", "namespaces", "-o", "json"])
+    from tabulate import tabulate
     
-    if not result.success:
-        return f"Error fetching namespaces: {result.error}"
+    # Use the KubernetesClient's Pydantic model approach
+    namespaces = KubernetesClient.get_namespaces()
     
-    return str(result.output)
+    if not namespaces:
+        return "Error fetching namespaces"
+    
+    if not namespaces.items:
+        return "No namespaces found"
+    
+    # Format the data as a table
+    table_data = []
+    for ns in namespaces.items:
+        name = ns.metadata.name
+        status = ns.status.phase
+        
+        # Get age
+        import datetime
+        from dateutil import parser
+        created = parser.isoparse(ns.metadata.creation_timestamp)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        age = now - created
+        
+        if age.days > 0:
+            age_str = f"{age.days}d"
+        else:
+            hours = age.seconds // 3600
+            minutes = (age.seconds % 3600) // 60
+            if hours > 0:
+                age_str = f"{hours}h{minutes}m"
+            else:
+                age_str = f"{minutes}m"
+        
+        table_data.append([name, status, age_str])
+    
+    headers = ["NAME", "STATUS", "AGE"]
+    return tabulate(table_data, headers=headers, tablefmt="plain")
 
 @mcp.tool()
 def describe_resource(resource_type: str, resource_name: str, namespace: str = "default") -> str:
@@ -249,36 +405,43 @@ def register_scripts():
             
             logger.info(f"Found script: {script_name} at {script_path}")
             
-            # Simple script registration - would need more work to match original functionality
-            @mcp.tool(name=f"script_{script_name}")
-            def run_script(arguments: Dict[str, Any] = {}) -> str:
-                """Run an external script with arguments"""
-                import tempfile
-                import json
-                import subprocess
-                
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp:
-                    json.dump(arguments, temp)
-                    temp_filename = temp.name
-                
-                try:
-                    result = subprocess.run(
-                        [sys.executable, script_path, "--args-file", temp_filename],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                        timeout=300  # 5 minute timeout
-                    )
+            # Define a closure to capture the current script_path and script_name
+            def create_script_runner(script_path, script_name):
+                @mcp.tool(name=f"script_{script_name}")
+                def run_script(**kwargs) -> str:
+                    """Run an external script with arguments"""
+                    import tempfile
+                    import json
+                    import subprocess
                     
-                    if result.returncode != 0:
-                        return f"Script execution failed: {result.stderr}"
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp:
+                        json.dump(kwargs, temp)
+                        temp_filename = temp.name
                     
-                    return result.stdout
-                finally:
-                    os.unlink(temp_filename)
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, script_path, "--args-file", temp_filename],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=300  # 5 minute timeout
+                        )
+                        
+                        if result.returncode != 0:
+                            return f"Script execution failed: {result.stderr}"
+                        
+                        return result.stdout
+                    finally:
+                        os.unlink(temp_filename)
+                
+                return run_script
+            
+            # Create and register the tool for this script
+            script_tool = create_script_runner(script_path, script_name)
+            # The tool is already registered with the decorator, no need to register again
 
-# Register available scripts - commented out as it needs more advanced implementation
-# register_scripts()
+# Register available scripts
+register_scripts()
 
 # Handler function for graceful shutdown
 def handle_sigterm(signum, frame):
