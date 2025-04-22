@@ -53,14 +53,24 @@ logger = logging.getLogger("nrf-query")
 # Script metadata - used by the MCP server for tool registration
 SCRIPT_METADATA = {
     "description": "Query NRF service for Network Functions (NFs)",
+    "aliases": ["nrf-query", "search-nf", "find-nf", "discover-nf", "get-network-functions"],
+    "common_queries": [
+        "query nrf for {nf_type}",
+        "find {nf_type} in nrf",
+        "search for {nf_type} network functions",
+        "get {nf_type} instances",
+        "discover {nf_type} in nrf"
+    ],
     "parameters": {
         "action": {
             "type": "string", 
-            "description": "Action to perform (discover, get_nf, get_instances, get_all_details)"
+            "description": "Action to perform (discover, get_nf, get_instances, get_all_details)",
+            "default": "discover"
         },
         "nf_type": {
             "type": "string", 
-            "description": "NF Type to search for (e.g., UDR, PCF, AMF)"
+            "description": "NF Type to search for (e.g., UDR, PCF, AMF)",
+            "required": True
         },
         "nrf_endpoint": {
             "type": "string", 
@@ -68,11 +78,13 @@ SCRIPT_METADATA = {
         },
         "configmap_name": {
             "type": "string", 
-            "description": "ConfigMap name containing NRF endpoints (default: nrf-config)"
+            "description": "ConfigMap name containing NRF endpoints (default: nrf-config)",
+            "default": "nrf-config"
         },
         "namespace": {
             "type": "string", 
-            "description": "Namespace containing the ConfigMap (default: pcf)"
+            "description": "Namespace containing the ConfigMap (default: pcf)",
+            "default": "pcf"
         },
         "exec_namespace": {
             "type": "string",
@@ -84,7 +96,7 @@ SCRIPT_METADATA = {
         },
         "nf_instance_id": {
             "type": "string",
-            "description": "NF Instance ID for get_nf action"
+            "description": "NF Instance ID for get_nf action (required for get_nf)"
         }
     }
 }
@@ -558,6 +570,14 @@ def main():
         # Load arguments from the file
         with open(args.args_file, 'r') as f:
             arguments = json.load(f)
+            
+        # Handle simplified queries by examining if only a type is specified
+        if len(arguments) == 1 and "nf_type" in arguments:
+            # This is likely a simple "query nrf for UDR" style command
+            arguments["action"] = "discover"
+        elif "nf_type" in arguments and "action" not in arguments:
+            # Default to discover action if type specified but no action
+            arguments["action"] = "discover"
     else:
         # Default arguments for CLI usage
         parser.add_argument("action", choices=["discover", "get_nf", "get_instances", "get_all_details"], 
